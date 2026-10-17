@@ -16,7 +16,7 @@ concurrency:
 jobs:
   release:
     if: github.repository == 'eastcukt/ClashMetaForAndroid'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
       contents: write
@@ -35,7 +35,10 @@ jobs:
           java-version: 21
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
 
       - name: Install Android build tools
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
