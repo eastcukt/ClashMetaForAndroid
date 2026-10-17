@@ -50,6 +50,12 @@ func UnmarshalAndPatch(profilePath string) (*config.RawConfig, error) {
 }
 
 func Parse(rawConfig *config.RawConfig) (*config.Config, error) {
+	configMu.Lock()
+	defer configMu.Unlock()
+	return parse(rawConfig)
+}
+
+func parse(rawConfig *config.RawConfig) (*config.Config, error) {
 	cfg, err := config.ParseRawConfig(rawConfig)
 	if err != nil {
 		return nil, err
@@ -59,6 +65,9 @@ func Parse(rawConfig *config.RawConfig) (*config.Config, error) {
 }
 
 func Load(path string) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+
 	rawCfg, err := UnmarshalAndPatch(path)
 	if err != nil {
 		log.Errorln("Load %s: %s", path, err.Error())
@@ -68,7 +77,7 @@ func Load(path string) error {
 
 	logDns(rawCfg)
 
-	cfg, err := Parse(rawCfg)
+	cfg, err := parse(rawCfg)
 	if err != nil {
 		log.Errorln("Load %s: %s", path, err.Error())
 
@@ -77,6 +86,7 @@ func Load(path string) error {
 
 	// like hub.Parse()
 	hub.ApplyConfig(cfg)
+	syncGeoUpdater(cfg)
 
 	app.ApplySubtitlePattern(rawCfg.ClashForAndroid.UiSubtitlePattern)
 
@@ -86,6 +96,10 @@ func Load(path string) error {
 }
 
 func LoadDefault() {
+	configMu.Lock()
+	defer configMu.Unlock()
+	geoUpdater.Stop()
+
 	cfg, err := config.Parse([]byte{})
 	if err != nil {
 		panic(err.Error())

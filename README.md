@@ -10,6 +10,32 @@ Feature of [Clash.Meta](https://github.com/MetaCubeX/Clash.Meta)
      alt="Get it on F-Droid"
      height="80">](https://f-droid.org/packages/com.github.metacubex.clash.meta/)
 
+### GEO database updates
+
+Enable automatic GEO updates in the profile's top-level YAML:
+
+```yaml
+geo-auto-update: true
+geo-update-interval: 24 # hours
+```
+
+CMFA uses the profile's `geox-url` download sources and updates installed
+GeoSite and ASN databases, plus the installed GeoIP format selected by
+`geodata-mode` (`geoip.dat` when true, MMDB when false). Uninstalled formats
+are skipped. An overdue database is checked after the
+configuration loads; otherwise the next check is scheduled from the oldest
+selected database's modification time. After either success or failure, the
+next attempt waits the configured interval while the service remains running.
+Switching profiles replaces the scheduled task, and stopping the service or
+setting `geo-auto-update: false` cancels future attempts. An in-flight core
+download is allowed to finish before another configuration is applied.
+
+This schedules the core's existing GEO update operations, including its file
+validation and matcher-cache refresh. It does not update subscriptions or
+change routing rules. A profile must load successfully before its task starts;
+if the installed database lacks a category required by the profile, import a
+compatible database first through Settings > Meta Features > Geo Files.
+
 ### Requirement
 
 - Android 5.0+ (minimum)
