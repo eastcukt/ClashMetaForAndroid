@@ -1,0 +1,169 @@
+name: Build Fork Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'fork-v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'eastcukt/ClashMetaForAndroid'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository and core
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-download-base-url: https://github.com/MetaCubeX/go/releases/download/build
+          go-version: '1.26'
+          cache-dependency-path: core/src/main/golang/go.sum
+
+      - name: Apply Android Go patches
+        run: |
+          cd "$(go env GOROOT)"
+          for patch_file in "$GITHUB_WORKSPACE"/.github/patch/*.patch; do
+            patch --batch --forward -p1 < "$patch_file"
+          done
+
+      - name: Test GEO scheduling
+        working-directory: core/src/main/golang
+        run: go test -race ./native/geoupdate
+
+      - name: Configure fork identity and version
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          printf '%s\n' 'custom.application.id=com.github.eastcukt.clash' > local.properties
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path('build.gradle.kts')
+          source = path.read_text()
+          number = int(os.environ['BUILD_NUMBER'])
+          source, names = re.subn(r'versionName = "([^"]+)"', lambda m: f'versionName = "{m[1]}.eastcukt.{number}"', source)
+          source, codes = re.subn(r'versionCode = \d+', f'versionCode = {1000000 + number}', source)
+          assert names == 1 and codes == 1, 'Expected exactly one Android version definition'
+          path.write_text(source)
+          PY
+
+      - name: Restore fork signing key
+        env:
+          FORK_KEYSTORE_BASE64: ${{ secrets.FORK_KEYSTORE_BASE64 }}
+          FORK_STORE_PASSWORD: ${{ secrets.FORK_STORE_PASSWORD }}
+          FORK_KEY_ALIAS: ${{ secrets.FORK_KEY_ALIAS }}
+          FORK_KEY_PASSWORD: ${{ secrets.FORK_KEY_PASSWORD }}
+        run: |
+          test -n "$FORK_KEYSTORE_BASE64"
+          test -n "$FORK_STORE_PASSWORD"
+          test -n "$FORK_KEY_ALIAS"
+          test -n "$FORK_KEY_PASSWORD"
+          umask 077
+          printf '%s' "$FORK_KEYSTORE_BASE64" | base64 --decode > release.keystore
+          printf 'keystore.password=%s\nkey.alias=%s\nkey.password=%s\n' \
+            "$FORK_STORE_PASSWORD" "$FORK_KEY_ALIAS" "$FORK_KEY_PASSWORD" > signing.properties
+
+      - name: Update bundled CA certificates
+        run: |
+          sudo update-ca-certificates
+          cp /etc/ssl/certs/ca-certificates.crt core/src/foss/golang/clash/component/ca/ca-certificates.crt
+
+      - name: Build signed APKs
+        run: ./gradlew --no-daemon app:assembleMetaRelease
+
+      - name: Verify APK signatures and create checksums
+        run: |
+          cd app/build/outputs/apk/meta/release
+          shopt -s nullglob
+          apks=(*.apk)
+          test "${#apks[@]}" -gt 0
+          for apk in "${apks[@]}"; do
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          done
+          sha256sum "${apks[@]}" > SHA256SUMS
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: CMFA-eastcukt-${{ github.run_number }}
+          path: |
+            app/build/outputs/apk/meta/release/*.apk
+            app/build/outputs/apk/meta/release/SHA256SUMS
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Publish fork release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then
+            tag="$REF_NAME"
+          else
+            tag="fork-build-$BUILD_NUMBER"
+          fi
+          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+          CMFA fork with automatic GEO database updates.
+
+          Enable in the profile's top-level YAML:
+          ```yaml
+          geo-auto-update: true
+          geo-update-interval: 24
+          ```
+
+          Failed downloads wait until the next configured update interval.
+          This build uses a persistent fork signing key and package ID
+          `com.github.eastcukt.clash.meta`, allowing installation alongside official CMFA.
+          Import your profile after installing. Future fork builds can upgrade this installation.
+
+          Most modern Android phones use the `arm64-v8a` APK; use `universal` if unsure.
+          NOTES
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" app/build/outputs/apk/meta/release/*.apk \
+              app/build/outputs/apk/meta/release/SHA256SUMS --clobber
+          else
+            gh release create "$tag" --target "$COMMIT" --prerelease \
+              --title "CMFA eastcukt $tag" --notes-file "$RUNNER_TEMP/release-notes.md" \
+              app/build/outputs/apk/meta/release/*.apk app/build/outputs/apk/meta/release/SHA256SUMS
+          fi
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f release.keystore signing.properties

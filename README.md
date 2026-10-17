@@ -42,6 +42,25 @@ compatible database first through Settings > Meta Features > Geo Files.
 - Android 7.0+ (recommend)
 - `armeabi-v7a` , `arm64-v8a`, `x86` or `x86_64` Architecture
 
+### Fork releases
+
+This fork provides **Build Fork Release** in GitHub Actions. Run it manually,
+or push a tag matching `fork-v*`, to build signed APKs for all supported ABIs
+and publish a GitHub pre-release with SHA-256 checksums. It also runs the GEO
+scheduler tests and verifies every APK signature before publishing.
+
+The fork uses package ID `com.github.eastcukt.clash.meta`, so it can coexist
+with official CMFA. Import your profiles into the fork after installation.
+Subsequent fork builds use the same signing key and an increasing version code
+and can upgrade that installation. Prefer the `arm64-v8a` APK for modern phones,
+or `universal` for all supported architectures.
+
+The workflow requires repository Actions secrets `FORK_KEYSTORE_BASE64`,
+`FORK_STORE_PASSWORD`, `FORK_KEY_ALIAS`, and `FORK_KEY_PASSWORD`. Keep a private
+backup of this signing key: it is required to publish compatible app updates.
+The `FORK_` secrets are used only by the fork release workflow; the upstream
+release workflows require their own signing configuration.
+
 ### Build
 
 1. Update submodules
