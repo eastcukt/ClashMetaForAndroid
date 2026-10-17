@@ -12,6 +12,12 @@ Feature of [Clash.Meta](https://github.com/MetaCubeX/Clash.Meta)
 
 ### GEO database updates
 
+Both `geoip.dat` and `geoip.metadb`, together with `geosite.dat` and ASN data,
+are bundled in the APK and extracted before profile validation. Profiles using
+either GeoIP mode can therefore load GEO rules on a fresh installation without
+an initial database download. App upgrades refresh older bundled database files,
+including differently capitalized `GeoIP.dat` files left by the core.
+
 Enable automatic GEO updates in the profile's top-level YAML:
 
 ```yaml

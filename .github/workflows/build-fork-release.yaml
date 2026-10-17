@@ -109,6 +109,22 @@ jobs:
       - name: Build signed APKs
         run: ./gradlew --no-daemon app:assembleMetaRelease
 
+      - name: Verify packaged GEO files
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          apks = list(Path('app/build/outputs/apk/meta/release').glob('*.apk'))
+          assert apks, 'No APKs built'
+          required = ('geoip.dat', 'geoip.metadb', 'geosite.dat', 'ASN.mmdb', 'BundleMRS.7z')
+          for apk in apks:
+              with ZipFile(apk) as archive:
+                  for name in required:
+                      assert archive.getinfo(f'assets/{name}').file_size > 0, f'{apk}: empty {name}'
+              print(f'{apk.name}: bundled GEO files verified')
+          PY
+
       - name: Verify APK signatures and create checksums
         run: |
           cd app/build/outputs/apk/meta/release
@@ -154,6 +170,8 @@ jobs:
           ```
 
           Failed downloads wait until the next configured update interval.
+          Both GeoIP formats and GeoSite are bundled and installed before profile validation,
+          so a fresh installation can load GEO rules without downloading its first database.
           This build uses a persistent fork signing key and package ID
           `com.github.eastcukt.clash.meta`, allowing installation alongside official CMFA.
           Import your profile after installing. Future fork builds can upgrade this installation.

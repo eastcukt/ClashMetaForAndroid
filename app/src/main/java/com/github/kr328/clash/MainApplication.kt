@@ -49,6 +49,18 @@ class MainApplication : Application() {
             }
         }
 
+        // The core accepts GeoIP.dat case-insensitively. Remove old variants
+        // together so an earlier failed download cannot shadow the bundled file.
+        val geoipDatFiles = clashDir.listFiles { file ->
+            file.isFile && file.name.equals("geoip.dat", ignoreCase = true)
+        }.orEmpty()
+        geoipDatFiles.filter { it.lastModified() < updateDate }.forEach { it.delete() }
+        if (geoipDatFiles.none { it.exists() }) {
+            FileOutputStream(File(clashDir, "geoip.dat")).use {
+                assets.open("geoip.dat").copyTo(it)
+            }
+        }
+
         val geositeFile = File(clashDir, "geosite.dat")
         if (geositeFile.exists() && geositeFile.lastModified() < updateDate) {
             geositeFile.delete()
