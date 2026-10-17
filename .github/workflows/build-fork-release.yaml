@@ -62,6 +62,8 @@ jobs:
 
       - name: Test GEO scheduling
         working-directory: core/src/main/golang
+        env:
+          CGO_ENABLED: '1'
         run: go test -race ./native/geoupdate
 
       - name: Configure fork identity and version
